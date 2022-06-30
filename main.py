@@ -2,6 +2,7 @@ import os
 import threading
 import requests
 from dotenv import load_dotenv
+from win10toast import ToastNotifier
 from time import sleep
 from requests.exceptions import ConnectionError, Timeout, TooManyRedirects
 
@@ -38,6 +39,7 @@ class CryptoLiveNotify:
     def __init__(self):
         load_dotenv()
         self.coinmarket_api = CoinMarketWrapper(api_key=os.getenv("COINMARKET_API_KEY"))
+        self.toaster = ToastNotifier()
 
     def main(self):
         current_threads = {}
@@ -56,6 +58,7 @@ class CryptoLiveNotify:
                     for thread in current_threads.values():
                         thread.terminate()
                 break
+
             elif cmd == "!add":
                 symbol = input("Crypto symbol (BTC) to add: ")
                 notify_price = int(input("What price should we notify you on? "))
@@ -64,7 +67,8 @@ class CryptoLiveNotify:
                 new_thread = PriceCheckThread(coinmarket_api=self.coinmarket_api,
                                               symbol=symbol,
                                               notify_price=notify_price,
-                                              sleep_time=sleep_time)
+                                              sleep_time=sleep_time,
+                                              win_notify=self.toaster)
 
                 current_threads.update({symbol: new_thread})
                 new_thread.start()
@@ -80,15 +84,17 @@ class CryptoLiveNotify:
                 print(current_threads) 
 
 class PriceCheckThread(threading.Thread):
-        def __init__(self, coinmarket_api, symbol, notify_price, sleep_time):
+        def __init__(self, coinmarket_api, symbol, notify_price, sleep_time, win_notify=None):
             super().__init__()
             self.keep_alive = True
             self.coinmarket_api = coinmarket_api
+            self.win_notify = win_notify
             self.symbol = symbol
             self.notify_price = notify_price
             self.sleep_time = sleep_time
         
         def terminate(self):
+            self.join()
             self.keep_alive = False
 
         def run(self):
@@ -97,6 +103,9 @@ class PriceCheckThread(threading.Thread):
                 price = int(latest_quote.get('price'))
                 if price > self.notify_price:
                     print(f"PRICE HAS INCREASED ABOVE {self.notify_price}")
+                    
+                    if type(self.win_notify) is not None:
+                        self.win_notify.show_toast("Crypto Notification", f"{self.symbol} has gone above the price of {self.notify_price}")
 
                 sleep(self.sleep_time)
 
